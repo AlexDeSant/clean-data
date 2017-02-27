@@ -1,0 +1,280 @@
+#install.packages("data.table")
+library(data.table)
+setwd("C:/Users/Carbon/Desktop/DATA/bimbo")
+train <- fread("train.csv")
+dim(train)
+test <- fread("test.csv")
+dim(test)
+
+colnames(train)
+# [1] "Semana"            "Agencia_ID"        "Canal_ID"          "Ruta_SAK"          "Cliente_ID"        "Producto_ID"       "Venta_uni_hoy"     "Venta_hoy"         "Dev_uni_proxima"  
+# [10] "Dev_proxima"       "Demanda_uni_equil"
+
+head(train)
+#    Semana Agencia_ID Canal_ID Ruta_SAK Cliente_ID Producto_ID Venta_uni_hoy Venta_hoy Dev_uni_proxima Dev_proxima Demanda_uni_equil
+# 1:      3       1110        7     3301      15766        1212             3     25.14               0           0                 3
+# 2:      3       1110        7     3301      15766        1216             4     33.52               0           0                 4
+# 3:      3       1110        7     3301      15766        1238             4     39.32               0           0                 4
+# 4:      3       1110        7     3301      15766        1240             4     33.52               0           0                 4
+# 5:      3       1110        7     3301      15766        1242             3     22.92               0           0                 3
+# 6:      3       1110        7     3301      15766        1250             5     38.20               0           0                 5
+colnames(test)
+#[1] "id"          "Semana"      "Agencia_ID"  "Canal_ID"    "Ruta_SAK"    "Cliente_ID"  "Producto_ID"
+head(test)
+# id Semana Agencia_ID Canal_ID Ruta_SAK Cliente_ID Producto_ID
+# 1:  0     11       4037        1     2209    4639078       35305
+# 2:  1     11       2237        1     1226    4705135        1238
+# 3:  2     10       2045        1     2831    4549769       32940
+# 4:  3     11       1227        1     4448    4717855       43066
+# 5:  4     11       1219        1     1130     966351        1277
+# 6:  5     11       1146        4     6601    1741414         972
+
+################## separate train y test sets si if train & test set weren't separated ####################### NO ESTÁ BIEN, SOBREESCRIBO LOS DATOS LEIDOS
+set.seed(1)
+
+n_train <- nrow(train) # tamaño de la muestra
+n_train_red <- n_train * 0.0001 # tamaño de la muestra reducida
+
+tot_index <- sample(n_train, n_train_red) # muesta aleatoria de tamaño la muestra sobre conj total
+train_idex <- tot_index[1:(round(0.7 * n_train_red))]
+test_index <- tot_index[(round(0.7 * n_train_red)+1):n_train_red] # como la muestra es aleatoria tomo los index train y test consecutivos
+
+train_compt <- train[train_idex, ] # me encuentro con valores de todos los tipos para train y test
+test_compt <- train[test_index, ]
+
+##################### leer csv's de identificadores ###########################
+
+client <- fread("cliente_tabla.csv")
+prod <- fread("producto_tabla.csv")
+agenc <- fread("town_state.csv")
+
+################ organizamos clientes, productos y agencias #########################################
+#### para agruparlos por nombres comunes a identificadores, 
+#### analizar la cantidad de productos que piden,
+#### en función de ello establecer un rakin de cada uno
+
+client[,.(apariciones = .N) , by = NombreCliente  ]
+
+#                              NombreCliente       apariciones
+# 1:                              SIN NOMBRE              356
+# 2:                        OXXO XINANTECATL                2
+# 3:                               EL MORENO               19
+# 4: SDN SER  DE ALIM  CUERPO SA CIA  DE INT                2
+# 5:    SDN SER DE ALIM CUERPO SA CIA DE INT                2
+# ---                                                    
+# 311151:                           OXXO CONGRESO           1
+# 311152:  DISTRIBUIDORA VIGIL TOSCANO S A DE C V           1
+# 311153:                             OXXO ALAZAN           1
+# 311154:                           OXXO IDOLO II           1
+# 311155:                    OXXO TUXPAM TAMIAHUA           1
+
+order_client <- client[,.(Cliente_ID) , by = NombreCliente  ]
+order_client
+#                                NombreCliente     Cliente_ID
+# 1:                             SIN NOMBRE                 0
+# 2:                             SIN NOMBRE                 2
+# 3:                             SIN NOMBRE                34
+# 4:                             SIN NOMBRE             10119
+# 5:                             SIN NOMBRE             16947
+# ---                                                  
+#   935358:                          OXXO CONGRESO   10281997
+# 935359: DISTRIBUIDORA VIGIL TOSCANO S A DE C V     10303963
+# 935360:                            OXXO ALAZAN     10351784
+# 935361:                          OXXO IDOLO II     10351802
+# 935362:                   OXXO TUXPAM TAMIAHUA     10351808
+
+
+
+###### COMO HAY IDs QUE SE REFIEREN AL MISMO CLIENTE, PRODUCTO, AGENCIA....LO 1º SERÁ IDENTIFICARLOS POR SU NOMBRE
+
+######### insertamos los clientes identificados en el data frame con sus nombres #####################
+######### una vez hecho esto aplicamos spread a fin de que nuestra regresión tenga sentido ###########
+######################################################################################################
+
+
+#### clients en función de la cantidad de producto, los que más piden ###
+#install.packages("tidyr")
+library(tidyr) 
+
+#function that given a Cliente_ID returns the NombreCliente
+nomb_client <- function(x){ # toma de la tabla de clientes el nombre 
+  ans <- order_client[which(Cliente_ID == x), NombreCliente]
+  ans
+}
+
+train1 <- train_compt
+train_client_ID <- train1$Cliente_ID # guardo los identificadores por si los necesitase
+train1$Cliente_ID <- sapply(train1$Cliente_ID, nomb_client) # returns as a list, use unlist
+train1
+
+train1_client <- train1 # conjunto con nombres de cliente
+train1_client
+
+############### HACER LO MIS MO PARA Producto_ID CON LA TABLA DE PRODUCTOS ################## 
+######################################################################################################
+###### construyo una función análoga a la anterior:
+
+#train1_client<-train_compt # si quiero empezar desde aquí
+prod
+
+order_product <- prod[,.(Producto_ID) , by = NombreProducto  ]
+order_product
+
+nomb_prod <- function(x){ # toma de la tabla de productos el nombre 
+  ans <- order_product[which(Producto_ID == x), NombreProducto]
+  ans
+}
+
+## función insertar nombres de producto
+prueba1 <- train1_client
+
+func_producto <- function(x){
+  train_prod_ID <- x$Producto_ID # guardo los identificadores por si los necesitase 
+  x$Producto_ID <- sapply(x$Producto_ID, nomb_prod)
+  x
+}
+
+train1_client_prod <- func_producto(prueba1) # conjunto con nombres de clientes y productos   
+train1_client_prod
+
+
+################# EXPRESIONES REGULARES PARA EXTRAER INFO DE LA FEATURE Producto_ID #####################################################
+#########################################################################################################################################
+#########################################################################################################################################
+
+
+################################ extract nombre producto en una feature  ####################################
+#install.packages("stringr")
+library(stringr)
+
+prueba3 <- train1_client_prod
+
+func_nombre_prod <- function(x){
+  Producto_nombre <- gsub("([0-9]+).*","\\",x$Producto_ID) # estraigo el producto
+  
+  df <- as.data.frame(x)# change to a data frame
+  target <- which(names(df) == 'Ruta_SAK') # lugar en el que insertaré el producto
+  #inserto el producto
+  df <- cbind(df[,1:target,drop=F], Producto_nombre, df[,(target+1):length(df),drop=F])
+  df
+}
+
+train2<-func_nombre_prod(prueba3)
+
+head(train2)
+
+################## extract the positions in each string of start and end of "[0-9]+g\\s", que serán los gramos ############################### HACER PARA DATA.TABLE
+############################################################################################################################################## TRANSFORM EN DATA FRAME
+
+library(stringr)
+
+prueba4<-train2
+head(prueba4) # Ahora se trata de un data frame 
+
+
+func_gramos_prod <- function(x){
+  
+  gramos_index <- str_locate(x$Producto_ID,"[0-9]+g\\s")
+  kg_index <- str_locate(x$Producto_ID,"[0-9]+Kg\\s")
+  ml_index <- str_locate(x$Producto_ID,"[0-9]+ml\\s")
+  
+  gramos_index <- str_locate(x$Producto_ID,"[0-9]+g\\s")
+  kg_index <- str_locate(x$Producto_ID,"[0-9]+Kg\\s")
+  ml_index <- str_locate(x$Producto_ID,"[0-9]+ml\\s")
+  
+  gramos <- str_sub(x$Producto_ID, gramos_index[,1], gramos_index[,2] )
+  gramos_index<-str_locate(gramos,"[0-9]+")
+  gramos <- as.numeric(str_sub(gramos, gramos_index[ ,1], gramos_index[ ,2] ))
+  
+  kg <- str_sub(x$Producto_ID, kg_index[,1], kg_index[,2] )
+  kg_index <- str_locate(kg,"[0-9]+")
+  kg <- str_sub(kg, kg_index[ ,1], kg_index[ ,2] )
+  kg <- as.numeric(kg)*1000
+  
+  ml <- str_sub(x$Producto_ID, ml_index[,1], ml_index[,2] )
+  ml_index<- str_locate(ml,"[0-9]+")
+  ml <- as.numeric(str_sub(ml, ml_index[ ,1], ml_index[ ,2] ))
+  
+  Kg_ml <- pmin(kg, ml, na.rm = TRUE)
+  Kg_ml_gr <- pmin(Kg_ml, gramos, na.rm = TRUE)
+  
+  target <- which(names(x) == 'Producto_nombre') # lugar en el que insertaré el producto
+  
+  x<- cbind(x[,1:target,drop=F], Kg_ml_gr, x[,(target+1):length(x),drop=F])
+  x
+}
+
+train3 <- func_gramos_prod(prueba4)
+head(train3)
+
+
+################## extract the positions in each string of start and end of "[0-9]+g\\p", que serán los paquetes############################
+############################################################################################################################################
+
+prueba5<-train3
+
+func_paquetes_prod <- function(x){
+  
+  paquetes_index<-str_locate(x$Producto_ID,"[0-9]+p\\s") # índices en los que empiezan y terminan los paquetes
+  
+  paquetes <- str_sub(x$Producto_ID, paquetes_index[ ,1], paquetes_index[ ,2] )
+  
+  paquetes_index<-str_locate(paquetes,"[0-9]+")
+  
+  paquetes <- str_sub(paquetes, paquetes_index[ ,1], paquetes_index[ ,2] )
+  
+  paquetes[is.na(paquetes)] <- 1
+  
+  target <- which(names(x) == 'Kg_ml_gr') # lugar en el que insertaré los Kg_ml_gr
+  
+  x<- cbind(x[,1:target,drop=F], paquetes, x[,(target+1):length(x),drop=F]) # NO HIZO FALRA ESCRIBIR RETURN NI LA VAR AL FINAL
+}
+
+train4 <- func_paquetes_prod(prueba5)
+
+train4[1:7, ] # sólo aparecen aquellos en los que se identifican los paquetes, que son algunos, 
+
+##################################### genero la columna medida * paquetes ####################################
+##############################################################################################################
+prueba6<-train4
+
+func_cant_tot_prod_prod <- function(x){ 
+  cant_tot_prod <- as.numeric(as.character(x$Kg_ml_gr)) * as.numeric(as.character((x$paquetes)))  # no es así de sencillo
+  target <- which(names(x) == 'paquetes') 
+  x<- cbind(x[,1:target,drop=F], cant_tot_prod, x[,(target+1):length(x),drop=F])
+}
+
+train5 <- func_cant_tot_prod_prod(prueba6)
+train5[1:7, ]
+
+############## obtengo las distintas ciudades de Agencia_ID en la tabla agenc para cada observación #######################
+agenc
+
+head(train5$Agencia_ID)
+
+prod
+
+order_Town <- agenc[,.(Agencia_ID) , by = Town  ]
+order_Town
+
+nomb_Town <- function(x){ # toma de la tabla de agenc la ciudad 
+  ans <- order_Town[which(Agencia_ID == x), Town]
+  ans
+}
+
+## función insertar nombres de producto
+
+train_prod_ID <- train5$Agencia_ID # guardo los identificadores por si los necesitase 
+
+func_Town <- function(x){
+  x$Agencia_ID <- sapply(x$Agencia_ID, nomb_Town) # sustituyo la id por la FEature Twon+Id
+  Agencia_nombre <- gsub("[0-9]+\\s","\\",x$Agencia_ID) # estraigo la agencia
+  target <- which(names(x) == 'Agencia_ID')
+  x<-cbind(x[,1:target,drop=F], Agencia_nombre, x[,(target+1):length(x),drop=F])
+  x
+} 
+
+insert_Twon_data <- func_Town(train5)
+insert_Twon_data[1:7, ]
+
+
